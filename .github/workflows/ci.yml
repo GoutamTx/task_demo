@@ -3,7 +3,7 @@ name: Secure Supply Chain CI
 on:
   push:
     branches:
-      - master
+      - master # Changed to 'master' as per your provided workflow snippet
 
 permissions:
   contents: read
@@ -11,7 +11,8 @@ permissions:
   id-token: write
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}/my-app
+  # Normalize the repository name to lowercase directly here
+  IMAGE_NAME: ghcr.io/${{ github.repository | lower }}/my-app
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -30,8 +31,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Normalize IMAGE_NAME to lowercase
-        run: echo "IMAGE_NAME=$(echo $IMAGE_NAME | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      # Removed the 'Normalize IMAGE_NAME to lowercase' step as it's now handled in the env block.
 
       - name: Build and push container image
         id: build-and-push # Keep this ID to reference its outputs
@@ -40,9 +40,6 @@ jobs:
           context: .
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
-
-      # Removed the 'Get image digest' step as its functionality is now covered
-      # by directly using the output from 'build-and-push' action.
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.2.0
@@ -114,7 +111,7 @@ jobs:
           COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }} # Use a secret for the public key
           # Access the output from the previous job using needs.<job_id>.outputs.<output_name>
           IMAGE_DIGEST: ${{ needs.build-and-sign.outputs.IMAGE_DIGEST }}
-          IMAGE_NAME: ghcr.io/${{ github.repository }}/my-app
+          IMAGE_NAME: ghcr.io/${{ github.repository | lower }}/my-app # Also normalize here for consistency
         run: |
           # Write the public key from the secret to a file
           echo "$COSIGN_PUBLIC_KEY" > cosign.pub
@@ -126,3 +123,4 @@ jobs:
           cosign verify-attestation --key cosign.pub "${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }}"
           
           echo "Verification successful. Image is trusted for deployment."
+
