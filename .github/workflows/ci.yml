@@ -11,8 +11,8 @@ permissions:
   id-token: write
 
 env:
-  # Normalize the repository name to lowercase directly here
-  IMAGE_NAME: ghcr.io/${{ github.repository | lower }}/my-app
+  # Initial definition, will be normalized to lowercase in a step
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/my-app
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -31,7 +31,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Removed the 'Normalize IMAGE_NAME to lowercase' step as it's now handled in the env block.
+      - name: Normalize IMAGE_NAME to lowercase for GHCR
+        run: |
+          # Convert the repository part of IMAGE_NAME to lowercase
+          # and update the IMAGE_NAME environment variable for subsequent steps.
+          LOWER_REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/$LOWER_REPO_NAME/my-app" >> $GITHUB_ENV
+        # This step must run before 'Build and push container image' to ensure IMAGE_NAME is lowercase.
 
       - name: Build and push container image
         id: build-and-push # Keep this ID to reference its outputs
@@ -39,6 +45,7 @@ jobs:
         with:
           context: .
           push: true
+          # Use the updated IMAGE_NAME from the GITHUB_ENV
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
 
       - name: Install Cosign
@@ -106,12 +113,20 @@ jobs:
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.2.0
 
+      - name: Normalize IMAGE_NAME to lowercase for GHCR (Verification Job)
+        run: |
+          # Convert the repository part of IMAGE_NAME to lowercase
+          # and update the IMAGE_NAME environment variable for subsequent steps.
+          LOWER_REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_NAME=ghcr.io/$LOWER_REPO_NAME/my-app" >> $GITHUB_ENV
+        # This step must run before verification commands.
+
       - name: Verify image and attestation
         env:
           COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }} # Use a secret for the public key
           # Access the output from the previous job using needs.<job_id>.outputs.<output_name>
           IMAGE_DIGEST: ${{ needs.build-and-sign.outputs.IMAGE_DIGEST }}
-          IMAGE_NAME: ghcr.io/${{ github.repository | lower }}/my-app # Also normalize here for consistency
+          # IMAGE_NAME is now updated via GITHUB_ENV in the previous step
         run: |
           # Write the public key from the secret to a file
           echo "$COSIGN_PUBLIC_KEY" > cosign.pub
