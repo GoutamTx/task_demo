@@ -3,7 +3,7 @@ name: Secure Supply Chain CI
 on:
   push:
     branches:
-      - master
+      - main
 
 permissions:
   contents: read
@@ -11,12 +11,14 @@ permissions:
   id-token: write
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}/my-appp
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/my-app
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build-and-sign:
     runs-on: ubuntu-latest
+    outputs: # Declare outputs for this job
+      IMAGE_DIGEST: ${{ steps.digest.outputs.IMAGE_DIGEST }} # Export the image digest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -27,11 +29,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-            
-      - name: Normalize IMAGE_NAME to lowercase
-        run: echo "IMAGE_NAME=$(echo $IMAGE_NAME | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
 
       - name: Build and push container image
         id: build-and-push
@@ -44,6 +41,16 @@ jobs:
       - name: Get image digest
         id: digest
         run: |
+          # Use docker/build-push-action's output for digest if available,
+          # otherwise, inspect it manually.
+          # The docker/build-push-action@v4 should output the digest directly.
+          # Let's rely on its output if it's there.
+          # If not, the manual inspect is a good fallback.
+          # For now, we'll assume the direct output or that the manual inspect works.
+          # Note: The 'outputs' of build-push-action are often more reliable.
+          # For v4, the digest is usually available as steps.build-and-push.outputs.digest
+          # Let's adjust to use that if possible, or ensure this step captures it correctly.
+          # For simplicity and to match previous logic, we keep the manual inspect for now.
           echo "IMAGE_DIGEST=$(docker buildx imagetools inspect ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} | grep 'Digest:' | awk '{print $2}')" >> $GITHUB_OUTPUT
 
       - name: Install Cosign
@@ -99,9 +106,10 @@ jobs:
           EOF
           
           cosign attest --yes --predicate slsa-provenance.json --key cosign.key ${{ env.IMAGE_NAME }}@${{ steps.digest.outputs.IMAGE_DIGEST }}
+
   verify-and-deploy:
     runs-on: ubuntu-latest
-    needs: build-and-sign
+    needs: build-and-sign # Ensure this job runs after build-and-sign
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -112,17 +120,17 @@ jobs:
       - name: Verify image and attestation
         env:
           COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }} # Use a secret for the public key
-          IMAGE_DIGEST: ${{ needs.build-and-sign.outputs.IMAGE_DIGEST }} # Pass the digest from the previous job
+          # Access the output from the previous job using needs.<job_id>.outputs.<output_name>
+          IMAGE_DIGEST: ${{ needs.build-and-sign.outputs.IMAGE_DIGEST }}
           IMAGE_NAME: ghcr.io/${{ github.repository }}/my-app
         run: |
           # Write the public key from the secret to a file
           echo "$COSIGN_PUBLIC_KEY" > cosign.pub
-
-          # Verify the image signature
+          
+          # Verify the image signature using the passed digest
           cosign verify --key cosign.pub "${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }}"
-
-          # Verify the provenance attestation
+          
+          # Verify the provenance attestation using the passed digest
           cosign verify-attestation --key cosign.pub "${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }}"
           
           echo "Verification successful. Image is trusted for deployment."
-
