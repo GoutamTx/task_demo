@@ -3,7 +3,7 @@ name: Secure Supply Chain CI
 on:
   push:
     branches:
-      - main
+      - master
 
 permissions:
   contents: read
