@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}/my-app
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/my-appp
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
